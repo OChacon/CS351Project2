@@ -55,6 +55,7 @@ def send_query():
     timed_out = False
     erred_out = False
     is_query_response = False
+    resp = []
 
     try:
         dump_packet(msg)
@@ -62,7 +63,6 @@ def send_query():
 
         while not timed_out and not is_query_response:
             ready = select.select([sock], [], [], TIME_OUT_SEC)
-            resp = []
 
             if ready[0]:
                 resp = sock.recvfrom(4096)
@@ -83,8 +83,7 @@ def send_query():
     elif erred_out:
         exit(0)
 
-    # print("Header and question hex: " + str(msg))
-    print("Server response hex: " + str(resp[0]))
+    print_response(resp[0])
 
 
 def int_to_hex(i):
@@ -110,8 +109,42 @@ def str_to_hex(s):
     return hex_s
 
 
+def hex_to_bin_list(h_str):
+    bin_list = []
+    bin_list_full = []
+
+    for h in h_str:
+        b = str(bin(int(h, 16)))[2:]
+
+        while len(b) < 4:
+            b = "0" + b
+
+        bin_list.append(b)
+
+    bin_list_len = len(bin_list)
+
+    for i in range(0, bin_list_len, 2):
+        b = bin_list[i]
+
+        if (i + 1) < bin_list_len:
+            b = b + bin_list[i + 1]
+        else:
+            b = "0000" + b
+
+        bin_list_full.append(b)
+
+    return bin_list_full
+
+
 def is_dns_response(s):
-    return True
+    hex_list = str(s).split("\\x")
+
+    if str_to_hex(hex_list[0][2:4]).lower() != H_1.lower():
+        return False
+    elif str(hex_to_bin_list(hex_list[1])[0])[0] != "1":
+        return False
+    else:
+        return True
 
 
 def dump_packet(p):
@@ -179,6 +212,51 @@ def dump_packet(p):
 
         print()
     print()
+
+
+def print_response(r):
+    hex_str = str(binascii.hexlify(r))[1:]
+    hex_str_len = len(hex_str)
+
+    head_bin_list = []
+
+    for i in range(5, 25, 4):
+        head_bin_list.append(hex_to_bin_list(hex_str[i:i + 4]))
+
+    r_code = head_bin_list[0][1][4:]
+
+    if r_code != "0000":
+        print_err(int(r_code, 2))
+        return
+
+    ans_index = 25
+
+    while ans_index < hex_str_len:
+        url_part_len = int(hex_str[ans_index:ans_index + 2], 16)
+        if url_part_len == 0:
+            ans_index += 2
+            break
+        else:
+            ans_index += 2 * (url_part_len + 1)
+
+    if ans_index == 25:
+        print_err("Could not find answer section")
+        return
+
+    class_index = ans_index + 4
+    rd_index = ans_index + 28
+
+    ans_type = int(hex_str[ans_index:ans_index + 4], 16)
+    ans_class = int(hex_str[class_index:class_index + 4], 16)
+    rd_length = int(hex_str[rd_index:rd_index + 4], 16)
+
+    ip_1 = str(int(hex_str[rd_index + 4: rd_index + 6], 16))
+    ip_2 = str(int(hex_str[rd_index + 6: rd_index + 8], 16))
+    ip_3 = str(int(hex_str[rd_index + 8: rd_index + 10], 16))
+    ip_4 = str(int(hex_str[rd_index + 10: rd_index + 12], 16))
+    ip_full = ip_1 + "." + ip_2 + "." + ip_3 + "." + ip_4
+
+    print("IP\t" + ip_full)
 
 
 def print_err(e):
