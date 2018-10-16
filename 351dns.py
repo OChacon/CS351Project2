@@ -68,15 +68,13 @@ def send_query():
         exit(0)
 
     name_list = name.split(".")
-    part_domain = name_list[-2] + "." + name_list[-1]
     name_bin = ""
 
-    if args_len == 4:
-        name_bin = int_to_hex(len(name_list[-2])) + str_to_hex(name_list[-2])
-        name_bin += int_to_hex(len(name_list[-1])) + str_to_hex(name_list[-1])
-    else:
-        for n in name_list:
-            name_bin = name_bin + int_to_hex(len(n)) + str_to_hex(n)
+    if args_len == 4 and name_list[0] == "www":
+        name_list.pop(0)
+
+    for n in name_list:
+        name_bin = name_bin + int_to_hex(len(n)) + str_to_hex(n)
 
     name_bin = name_bin + Z_BYTE
 
@@ -117,7 +115,7 @@ def send_query():
     elif erred_out:
         exit(0)
 
-    print_response(question, resp[0], part_domain)
+    print_response(q_type, question, resp[0])
 
 
 def dump_packet(p):
@@ -168,16 +166,25 @@ def dump_packet(p):
     print()
 
 
-def print_response(q, r, d):
-    hex_str = str(binascii.hexlify(r))[1:]
+def print_response(q_type, q, r):
+    hex_str = str(binascii.hexlify(r))[1:-1]
     q_len = len(q)
     head_bin_list = []
+
+    # for i in range(1, len(hex_str), 4):
+    #     hx_st = hex_str[i:i+2]
+    #     if i < len(hex_str) + 4:
+    #         hx_st += "\t" + hex_str[i+2:i+4]
+    #     print(str((i-1) / 2) + "\t" + hx_st)
 
     for i in range(5, HEAD_LEN + 1, 4):
         head_bin_list.append(hex_to_bin_list(hex_str[i:i + 4]))
 
     r_code = head_bin_list[0][1][4:]
     ans_count = int(head_bin_list[2][0] + head_bin_list[2][1], 2)
+    auth_count = int(head_bin_list[3][0] + head_bin_list[3][1], 2)
+    add_count = int(head_bin_list[4][0] + head_bin_list[4][1], 2)
+    is_auth = int(head_bin_list[0][0][5])
 
     if r_code != "0000":
         if int(r_code, 2) == 3:
@@ -194,39 +201,44 @@ def print_response(q, r, d):
 
     ans_index = HEAD_LEN + q_len + 1
 
-    for i in range(0, ans_count):
+    for i in range(0, ans_count + auth_count + add_count):
+        should_print = True
+        byte_1 = hex_to_bin_list(hex_str[ans_index:ans_index + 2])[0][2:]
+        byte_2 = hex_to_bin_list(hex_str[ans_index + 2:ans_index + 4])[0]
+        d_name_offset = (int(byte_1 + byte_2, 2) - 12) * 2
+        d = get_name_by_offset(q + hex_str[1:], d_name_offset)
         ans_type = int(hex_str[ans_index + 4:ans_index + 8], 16)
         rd_index = ans_index + ANS_OFFSET
         ans_len = int(hex_str[rd_index:rd_index + 4], 16)
         out_str = ""
 
-        if ans_type == ANS_TYPE_A:
+        if ans_type == ANS_TYPE_A and q_type == Q_TYPE_A:
             ip_1 = str(int(hex_str[rd_index + 4: rd_index + 6], 16))
             ip_2 = str(int(hex_str[rd_index + 6: rd_index + 8], 16))
             ip_3 = str(int(hex_str[rd_index + 8: rd_index + 10], 16))
             ip_4 = str(int(hex_str[rd_index + 10: rd_index + 12], 16))
             ip_full = ip_1 + "." + ip_2 + "." + ip_3 + "." + ip_4
-            print("IP   \t" + ip_full)
+            out_str += "IP   \t" + ip_full
             ans_index = rd_index + 12
         else:
             start_index = rd_index + 6
 
-            if ans_type == ANS_TYPE_NS:
+            if ans_type == ANS_TYPE_NS and q_type == Q_TYPE_NS:
                 out_str += "NS   \t"
             elif ans_type == ANS_TYPE_CNAME:
                 out_str += "CNAME\t"
-            elif ans_type == ANS_TYPE_MX:
+            elif ans_type == ANS_TYPE_MX and q_type == Q_TYPE_MX:
                 start_index = rd_index + 10
-                out_str += "MX   \t"
+                out_str += "MX\t"
+                out_str += str(int(hex_str[rd_index+6:rd_index+8], 16)) + "\t"
             else:
-                print_err("Unexpected answer type")
-                return
+                should_print = False
 
             end_index = rd_index + 2 * ans_len
             j = start_index
 
             while j < end_index:
-                h = hex_str[j] + hex_str[j + 1]
+                h = hex_str[j:j + 2]
 
                 if 0 <= int(h, 16) <= 31:
                     out_str += "."
@@ -235,8 +247,14 @@ def print_response(q, r, d):
                     out_str += chr(int(h, 16))
                     j += 2
 
-            print(out_str + "." + d)
+            out_str += "." + d
             ans_index = rd_index + 4 + 2 * ans_len
+
+        if should_print:
+            if (i < ans_count or i >= int(ans_count) + int(auth_count)) and is_auth != 1:
+                print(out_str + "\t <nonauth>")
+            else:
+                print(out_str + "\t <auth>")
 
 
 def int_to_hex(i):
@@ -287,6 +305,36 @@ def hex_to_bin_list(h_str):
         bin_list_full.append(b)
 
     return bin_list_full
+
+
+def get_name_by_offset(hex_str, offset):
+    name = ""
+    name_len = int(hex_str[offset:offset + 2], 16)
+
+    try:
+        while name_len != 0:
+            i = offset + 2
+            end_index = i + (2 * name_len)
+
+            while i < end_index:
+                int_val = int(hex_str[i:i + 2], 16)
+
+                if int_val < 32:
+                    name += "."
+                else:
+                    name += chr(int_val)
+
+                i += 2
+
+            offset = end_index
+            name_len = int(hex_str[offset:offset + 2], 16)
+
+            if name_len > 0:
+                name += "."
+    except ValueError:
+        pass
+
+    return name
 
 
 def is_dns_response(s):
