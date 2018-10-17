@@ -1,3 +1,11 @@
+"""
+Starbuck Beagley & Oscar Chacon
+CSCI-351
+
+Project 2: DNS client program
+"""
+
+
 import binascii
 import sys
 import socket
@@ -27,6 +35,11 @@ HEAD_LEN = 24
 
 
 def send_query():
+    """
+    Main function. Parses command line parameters, constructs
+    and sends query, interprets and displays response.
+    :return: None
+    """
     args = sys.argv
     args_len = len(args)
     server = ""
@@ -119,6 +132,11 @@ def send_query():
 
 
 def dump_packet(p):
+    """
+    Displays query hex and domain name
+    :param p: DNS query string
+    :return: None
+    """
     s_list = []
     h_list = []
     h_str = str(binascii.hexlify(p))[2:-1]
@@ -167,15 +185,16 @@ def dump_packet(p):
 
 
 def print_response(q_type, q, r):
-    hex_str = str(binascii.hexlify(r))[1:-1]
+    """
+    Prints server response to query
+    :param q_type: question type sent in query
+    :param q: query string
+    :param r: response string
+    :return: None
+    """
+    hex_str = str(binascii.hexlify(r))[1:]
     q_len = len(q)
     head_bin_list = []
-
-    # for i in range(1, len(hex_str), 4):
-    #     hx_st = hex_str[i:i+2]
-    #     if i < len(hex_str) + 4:
-    #         hx_st += "\t" + hex_str[i+2:i+4]
-    #     print(str((i-1) / 2) + "\t" + hx_st)
 
     for i in range(5, HEAD_LEN + 1, 4):
         head_bin_list.append(hex_to_bin_list(hex_str[i:i + 4]))
@@ -203,11 +222,13 @@ def print_response(q_type, q, r):
 
     for i in range(0, ans_count + auth_count + add_count):
         should_print = True
+        ans_type = int(hex_str[ans_index + 4:ans_index + 8], 16)
+
         byte_1 = hex_to_bin_list(hex_str[ans_index:ans_index + 2])[0][2:]
         byte_2 = hex_to_bin_list(hex_str[ans_index + 2:ans_index + 4])[0]
         d_name_offset = (int(byte_1 + byte_2, 2) - 12) * 2
         d = get_name_by_offset(q + hex_str[1:], d_name_offset)
-        ans_type = int(hex_str[ans_index + 4:ans_index + 8], 16)
+
         rd_index = ans_index + ANS_OFFSET
         ans_len = int(hex_str[rd_index:rd_index + 4], 16)
         out_str = ""
@@ -219,6 +240,7 @@ def print_response(q_type, q, r):
             ip_4 = str(int(hex_str[rd_index + 10: rd_index + 12], 16))
             ip_full = ip_1 + "." + ip_2 + "." + ip_3 + "." + ip_4
             out_str += "IP   \t" + ip_full
+
             ans_index = rd_index + 12
         else:
             start_index = rd_index + 6
@@ -258,6 +280,11 @@ def print_response(q_type, q, r):
 
 
 def int_to_hex(i):
+    """
+    Translates small integer to hexadecimal
+    :param i: integer
+    :return: hexadecimal string
+    """
     hex_i = hex(i).replace("0x", "")
 
     if len(hex_i) < 2:
@@ -267,20 +294,30 @@ def int_to_hex(i):
 
 
 def str_to_hex(s):
+    """
+    Translates character string to hexadecimal string
+    :param s: string
+    :return: hexadecimal string
+    """
     hex_s = ""
 
     for c in s:
         h = hex(ord(c)).replace("0x", "")
 
         if len(h) < 2:
-            hex_s = hex_s + "0" + h
-        else:
-            hex_s = hex_s + h
+            h = "0" + h
+
+        hex_s += h
 
     return hex_s
 
 
 def hex_to_bin_list(h_str):
+    """
+    Translates hexadecimal string to list of binary strings
+    :param h_str: hexadecimal string
+    :return: binary string list
+    """
     bin_list = []
     bin_list_full = []
 
@@ -308,10 +345,16 @@ def hex_to_bin_list(h_str):
 
 
 def get_name_by_offset(hex_str, offset):
+    """
+    Gets domain name at given offset in DNS response
+    :param hex_str: DNS response as hexadecimal string
+    :param offset: offset in DNS string
+    :return: domain name string
+    """
     name = ""
     name_len = int(hex_str[offset:offset + 2], 16)
 
-    try:
+    try:    # workaround for extra space at end of hexadecimal string
         while name_len != 0:
             i = offset + 2
             end_index = i + (2 * name_len)
@@ -338,6 +381,11 @@ def get_name_by_offset(hex_str, offset):
 
 
 def is_dns_response(s):
+    """
+    Checks whether DNS response has valid ID and has response type flag set
+    :param s: DNS response string
+    :return: True if valid, False otherwise
+    """
     hex_list = str(s).split("\\x")
 
     if int(str_to_hex(hex_list[0][2:4]), 16) != int(H_1, 16):
@@ -349,6 +397,11 @@ def is_dns_response(s):
 
 
 def print_err(e):
+    """
+    Prints error
+    :param e: error string to print
+    :return: None
+    """
     print("ERROR\t" + e)
 
 
@@ -358,10 +411,10 @@ def usage():
     :return: None
     """
     print("Usage: [-ns|-mx] ./351dns @<server:port> <name>")
-    print("\t[-ns|-mx] (Optional) To request NS or MX records. Defaults value: A.")
+    print("\t[-ns|-mx] (Optional) To request NS or MX records. Default value: A.")
     print("\tport (Optional) The UDP port number of the DNS server. Default value: 53.")
     print("\tserver (Required) The IP address of the DNS server, in a.b.c.d format.")
-    print("\tname (Required) The name to query for.")
+    print("\tname (Required) The domain name to query for.")
 
 
 if __name__ == "__main__":
