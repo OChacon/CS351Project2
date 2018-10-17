@@ -66,6 +66,12 @@ def send_query():
 
     port = 53
 
+    if server[0] == "@":
+        server = server[1:]
+    else:
+        usage()
+        exit(0)
+
     if ":" in server:
         server_port = server.split(":")
         server = str(server_port[0])
@@ -410,7 +416,7 @@ def usage():
     Displays usage information
     :return: None
     """
-    print("Usage: [-ns|-mx] ./351dns @<server:port> <name>")
+    print("Usage: [-ns|-mx] 351dns.py @<server:port> <name>")
     print("\t[-ns|-mx] (Optional) To request NS or MX records. Default value: A.")
     print("\tport (Optional) The UDP port number of the DNS server. Default value: 53.")
     print("\tserver (Required) The IP address of the DNS server, in a.b.c.d format.")
